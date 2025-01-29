@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sales & Occupancy Dashboard</title>
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .custom-table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        .custom-table th, .custom-table td {
+            border: 1px solid #e5e7eb;
+            padding: 8px;
+        }
+        .chart-container {
+            position: relative;
+            margin: auto;
+            height: 300px;
+            width: 100%;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Summary Section -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-xl font-bold mb-4">Revenue Trend</h2>
+                <canvas id="revenueChart" class="chart-container"></canvas>
+            </div>
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-xl font-bold mb-4">Location Revenue</h2>
+                <canvas id="locationChart" class="chart-container"></canvas>
+            </div>
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-xl font-bold mb-4">Category Distribution</h2>
+                <canvas id="categoryChart" class="chart-container"></canvas>
+            </div>
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-xl font-bold mb-4">Pipeline Status</h2>
+                <canvas id="pipelineChart" class="chart-container"></canvas>
+            </div>
+        </div>
+
+        <!-- Data Entry Section -->
+        <div class="bg-white rounded-lg shadow-lg p-6">
+            <h1 class="text-2xl font-bold mb-6 text-gray-800">Sales & Occupancy Report Generator</h1>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <input type="month" id="reportMonth" class="border rounded p-2">
+                <select id="categorySelect" class="border rounded p-2">
+                    <option value="">Select Category</option>
+                    <option value="Retail">Retail</option>
+                    <option value="Office">Office</option>
+                    <option value="Warehouse">Warehouse</option>
+                </select>
+                <button onclick="addEntry()" class="bg-blue-500 text-white rounded px-4 py-2 hover:bg-blue-600">
+                    Add New Entry
+                </button>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="custom-table">
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th>Client Name</th>
+                            <th>Brand Name</th>
+                            <th>Category</th>
+                            <th>Location</th>
+                            <th>Duration (Days)</th>
+                            <th>Rate</th>
+                            <th>Negotiated Rate</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dataTable"></tbody>
+                </table>
+            </div>
+
+            <div class="mt-6 flex justify-end gap-4">
+                <button onclick="generateSummary()" class="bg-purple-500 text-white rounded px-4 py-2 hover:bg-purple-600">
+                    <i class="bi bi-bar-chart-line me-2"></i> Generate Summary
+                </button>
+                <button onclick="exportToExcel()" class="bg-green-500 text-white rounded px-4 py-2 hover:bg-green-600">
+                    <i class="bi bi-file-earmark-excel me-2"></i> Export to Excel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let data = [];
+        let charts = {};
+
+        // Initialize Charts
+        function initializeCharts() {
+            charts.revenue = new Chart(document.getElementById('revenueChart'), {
+                type: 'line',
+                data: {
+                    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+                    datasets: [{
+                        label: 'Monthly Revenue',
+                        data: [],
+                        borderColor: 'rgb(75, 192, 192)',
+                        tension: 0.1
+                    }]
+                }
+            });
+
+            charts.location = new Chart(document.getElementById('locationChart'), {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Revenue by Location',
+                        data: [],
+                        backgroundColor: 'rgb(54, 162, 235)'
+                    }]
+                }
+            });
+
+            charts.category = new Chart(document.getElementById('categoryChart'), {
+                type: 'pie',
+                data: {
+                    labels: ['Retail', 'Office', 'Warehouse'],
+                    datasets: [{
+                        data: [0, 0, 0],
+                        backgroundColor: [
+                            'rgb(255, 99, 132)',
+                            'rgb(54, 162, 235)',
+                            'rgb(255, 205, 86)'
+                        ]
+                    }]
+                }
+            });
+
+            charts.pipeline = new Chart(document.getElementById('pipelineChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: ['Lead', 'Negotiation', 'Closed'],
+                    datasets: [{
+                        data: [0, 0, 0],
+                        backgroundColor: [
+                            'rgb(255, 159, 64)',
+                            'rgb(75, 192, 192)',
+                            'rgb(153, 102, 255)'
+                        ]
+                    }]
+                }
+            });
+        }
+
+        function addEntry() {
+            const newRow = document.createElement('tr');
+            newRow.innerHTML = `
+                <td><input type="text" class="border rounded p-1 w-full" placeholder="Client Name"></td>
+                <td><input type="text" class="border rounded p-1 w-full" placeholder="Brand Name"></td>
+                <td>
+                    <select class="border rounded p-1 w-full">
+                        <option value="Retail">Retail</option>
+                        <option value="Office">Office</option>
+                        <option value="Warehouse">Warehouse</option>
+                    </select>
+                </td>
+                <td><input type="text" class="border rounded p-1 w-full" placeholder="Location"></td>
+                <td><input type="number" class="border rounded p-1 w-full" placeholder="Duration"></td>
+                <td><input type="number" class="border rounded p-1 w-full" placeholder="Rate"></td>
+                <td><input type="number" class="border rounded p-1 w-full" placeholder="Negotiated Rate"></td>
+                <td>
+                    <select class="border rounded p-1 w-full">
+                        <option value="Lead">Lead</option>
+                        <option value="Negotiation">Negotiation</option>
+                        <option value="Closed">Closed</option>
+                    </select>
+                </td>
+                <td>
+                    <button onclick="saveRow(this)" class="text-green-500 hover:text-green-700 mr-2">
+                        <i class="bi bi-check-lg"></i>
+                    </button>
+                    <button onclick="deleteRow(this)" class="text-red-500 hover:text-red-700">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            `;
+            document.getElementById('dataTable').appendChild(newRow);
+        }
+
+        function updateCharts() {
+            // Update revenue chart
+            const revenueByMonth = {};
+            data.forEach(entry => {
+                const month = new Date().toLocaleString('default', { month: 'short' });
+                revenueByMonth[month] = (revenueByMonth[month] || 0) + Number(entry.negotiatedRate);
+            });
+            charts.revenue.data.datasets[0].data = Object.values(revenueByMonth);
+            charts.revenue.update();
+
+            // Update location chart
+            const revenueByLocation = {};
+            data.forEach(entry => {
+                revenueByLocation[entry.location] = (revenueByLocation[entry.location] || 0) + Number(entry.negotiatedRate);
+            });
+            charts.location.data.labels = Object.keys(revenueByLocation);
+            charts.location.data.datasets[0].data = Object.values(revenueByLocation);
+            charts.location.update();
+
+            // Update category and pipeline charts similarly
+            const categoryData = {'Retail': 0, 'Office': 0, 'Warehouse': 0};
+            const pipelineData = {'Lead': 0, 'Negotiation': 0, 'Closed': 0};
+            data.forEach(entry => {
+                categoryData[entry.category] += Number(entry.negotiatedRate);
+                pipelineData[entry.status] += 1;
+            });
+            
+            charts.category.data.datasets[0].data = Object.values(categoryData);
+            charts.pipeline.data.datasets[0].data = Object.values(pipelineData);
+            charts.category.update();
+            charts.pipeline.update();
+        }
+
+        function generateSummary() {
+            updateCharts();
+        }
+
+        function saveRow(btn) {
+            const row = btn.closest('tr');
+            const inputs = row.querySelectorAll('input, select');
+            const entry = {
+                clientName: inputs[0].value,
+                brandName: inputs[1].value,
+                category: inputs[2].value,
+                location: inputs[3].value,
+                duration: inputs[4].value,
+                rate: inputs[5].value,
+                negotiatedRate: inputs[6].value,
+                status: inputs[7].value
+            };
+            data.push(entry);
+            
+            const cells = row.cells;
+            for (let i = 0; i < cells.length - 1; i++) {
+                cells[i].textContent = inputs[i].value;
+            }
+            
+            cells[cells.length - 1].innerHTML = `
+                <button onclick="editRow(this)" class="text-blue-500 hover:text-blue-700 mr-2">
+                    <i class="bi bi-pencil"></i>
+                </button>
+                <button onclick="deleteRow(this)" class="text-red-500 hover:text-red-700">
+                    <i class="bi bi-trash"></i>
+                </button>
+            `;
+            
+            updateCharts();
+        }
+
+        function editRow(btn) {
+            const row = btn.closest('tr');
+            const cells = row.cells;
+            const values = [];
+            
+            for (let i = 0; i < cells.length - 1; i++) {
+                values.push(cells[i].textContent);
+            }
+            
+            row.innerHTML = `
+                <td><input type="text" class="border rounded p-1 w-full" value="${values[0]}"></td>
+                <td><input type="text" class="border rounded p-1 w-full" value="${values[1]}"></td>
+                <td>
+                    <select class="border rounded p-1 w-full">
+                        <option value="Retail" ${values[2] === 'Retail' ? 'selected' : ''}>Retail</option>
+                        <option value="Office" ${values[2] === 'Office' ? 'selected' : ''}>Office</option>
+                        <option value="Warehouse" ${values[2] === 'Warehouse' ? 'selected' : ''}>Warehouse</option>
+                    </select>
+                </td>
+                <td><input type="text" class="border rounded p-1 w-full" value="${values[3]}"></td>
+                <td><input type="number" class="border rounded p-1 w-full" value="${values[4]}"></td>
+                <td><input type="number" class="border rounded p-1 w-full" value="${values[5]}"></td>
+                <td><input type="number" class="border rounded p-1 w-full" value="${values[6]}"></td>
+                <td>
+                    <select class="border rounded p-1 w-full">
+                        <option value="Lead" ${values[7] === 'Lead' ? 'selected' : ''}>Lead</option>
+                        <option value="Negotiation" ${values[7] === 'Negotiation' ? 'selected' : ''}>Negotiation</option>
+                        <option value="Closed" ${values[7] === 'Closed' ? 'selected' : ''}>Closed</option>
+                    </select>
+                </td>
+                <td>
+                    <button onclick="saveRow(this)" class="text-green-500 hover:text-green-700 mr-2">
+                        <i class="bi bi-check-lg"></i>
+                    </button>
+                    <button onclick="deleteRow(this)" class="text-red-500 hover:text-red-700">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            `;
+        }
+
+        function deleteRow(btn) {
+            const row = btn.closest('tr');
+            const index = Array.from(row.parentNode.children).indexOf(row);
+            data.splice(index, 1);
+            row.remove();
+            updateCharts();
+        }
+
+        function exportToExcel() {
+            const month = document.getElementById('reportMonth').value;
+            if (!month) {
+                alert('Please select a month first!');
+                return;
+            }
+
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Sales Report");
+            
+            const filename = `Sales_Report_${month}.xlsx`;
+            XLSX.writeFile(wb, filename);
+        }
+
+        // Initialize charts when page loads
+        window.onload = initializeCharts;
+    </script>
+<script>document.body.addEventListener('wheel', e => { if (!e.ctrlKey) return; e.preventDefault(); return }, { passive: false })</script>
+	</body>
+</html>
